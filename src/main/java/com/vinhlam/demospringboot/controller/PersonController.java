@@ -93,4 +93,16 @@ public class PersonController {
 			return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Add new language not success");
 		}
 	}
+	
+//	Tìm kiếm person theo tên
+	@GetMapping("/search/{name}")
+	public ResponseEntity<?> searchPersonByName(@PathVariable String name) {
+		List<Person> persons = personService.searchPersonByName(name);
+		System.out.println(name);
+		if(persons.size() > 0) {
+			return ResponseEntity.ok(persons);
+		} else {
+			return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Person is null");
+		}
+	}
 }

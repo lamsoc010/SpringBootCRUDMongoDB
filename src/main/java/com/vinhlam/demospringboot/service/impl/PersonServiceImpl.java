@@ -10,6 +10,7 @@ import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
+import org.springframework.data.mongodb.core.aggregation.AggregationExpression;
 import org.springframework.data.mongodb.core.aggregation.AggregationOperation;
 import org.springframework.data.mongodb.core.aggregation.AggregationResults;
 import org.springframework.data.mongodb.core.aggregation.AggregationUpdate;
@@ -132,6 +133,20 @@ public class PersonServiceImpl implements PersonService{
 		
 		UpdateResult ur = mongoTemplate.updateFirst(query, update, Person.class);
 		return ur.wasAcknowledged();
+	}
+
+	@Override
+	public List<Person> searchPersonByName(String name) {
+		Criteria criteria = new Criteria().orOperator((Criteria.where("firstName").regex(name, "i")),(Criteria.where("lastName").regex(name, "i")) );
+		AggregationOperation match = Aggregation.match(criteria);
+		List<AggregationOperation> aggregationOperations = new ArrayList<AggregationOperation>();
+        aggregationOperations.add(match);
+
+        Aggregation aggregation = Aggregation.newAggregation(aggregationOperations);
+        AggregationResults<Person> groupResults = this.mongoTemplate.aggregate(aggregation, "person", Person.class);
+
+        List<Person> persons = groupResults.getMappedResults();
+		return persons;
 	}
 
 }

@@ -14,4 +14,6 @@ public interface PersonService {
 	Person insertPerson(PersonDTO personDTO);
 	
 	boolean addNewLanguage(String id, Language language);
+	
+	List<Person> searchPersonByName(String name);
 }
