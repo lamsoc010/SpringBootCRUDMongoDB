@@ -3,6 +3,7 @@ package com.vinhlam.demospringboot.controller;
 import java.util.List;
 
 import org.bson.Document;
+import org.bson.types.ObjectId;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -28,7 +29,7 @@ public class PersonController {
 	@Autowired
 	private PersonService personService;
 	
-	@GetMapping("")
+	@GetMapping("/getAll")
 	public ResponseEntity<?> getAll(
 			@RequestParam(value="pageNo", defaultValue = "1", required = false) int pageNo,
 			@RequestParam(value="pageSize", defaultValue = "5", required = false) int pageSize
@@ -37,13 +38,13 @@ public class PersonController {
 	}
 	
 	
-	@GetMapping("/get/{id}")
+	@GetMapping("/getPersonById/{id}")
 	public ResponseEntity<?> getPersonById(@PathVariable String id) {
 		return personService.getPersonById(id);
 	}
 	
-	@PostMapping("/insert") 
-	public ResponseEntity<?> insert(@RequestBody PersonDTO personDTO) {
+	@PostMapping("/createNewPerson") 
+	public ResponseEntity<?> createNewPerson(@RequestBody PersonDTO personDTO) {
 		Person person = personService.insertPerson(personDTO);
 		if(person != null) {
 			return ResponseEntity.ok("insert success");
@@ -52,25 +53,19 @@ public class PersonController {
 		}
 	}
 	
-	@DeleteMapping("/delete/{id}")
+	@DeleteMapping("/deletePersonById/{id}")
 	public ResponseEntity<?> delete(@PathVariable String id) {
 		return personService.deletePerson(id);
 	}
 	
 
-	@PostMapping("/update/{id}")
+	@PostMapping("/updatePerson/{id}")
 	public ResponseEntity<?> update(@PathVariable String id, @RequestBody PersonDTO personDTO) {
 		return personService.updatePerson(id, personDTO);
 	}
 	
-//2. Viết query update thêm 1 language của 1 person
-	@PostMapping("/language/add/{id}")
-	public ResponseEntity<?> updateLanguage(@PathVariable String id, @RequestBody Language language) {
-		return personService.addNewLanguage(id, language);
-	}
-	
 //	Tìm kiếm person theo tên
-	@GetMapping("/search/{name}")
+	@GetMapping("/searchPersonByName/{name}")
 	public ResponseEntity<?> searchPersonByName(@PathVariable String name) {
 		List<Person> persons = personService.searchPersonByName(name);
 		System.out.println(name);
@@ -81,6 +76,16 @@ public class PersonController {
 		}
 	}
 	
+//2. Viết query update thêm 1 language của 1 person
+	@PostMapping("/language/update/{id}")
+	public ResponseEntity<?> updateLanguage(@PathVariable String id, @RequestBody Language language) {
+		if(ObjectId.isValid(id)) {
+			return personService.addNewLanguage(id, language);			
+		} else {
+			return ResponseEntity.status(HttpStatus.PAYMENT_REQUIRED).body("Id is not Object Id");
+		}
+	}
+	
 //3. Viết query xoá 1 language của 1 person
 	@GetMapping("/language/delete/{id}")
 	public ResponseEntity<?> deleteLanguage(@PathVariable String id, @RequestBody Language language) {
@@ -88,31 +93,31 @@ public class PersonController {
 	}
 	
 //4. Viết query update thêm 1 info của 1 person
-	@PostMapping("/info/add/{id}")
+	@PostMapping("/info/createNew/{id}")
 	public ResponseEntity<?> addNewInfo(@PathVariable String id, @RequestBody Info info) {
 		return personService.addNewInfo(id, info);
 	}
 	
-//5. Viết query update CMND của 1 user thành deactive (ko còn sử dụng nữa)
-	@PostMapping("/info/update/{id}")
+//5. Viết query update CMND của 1 user thành deactice (ko còn sử dụng nữa)
+	@PostMapping("/info/updateDeactice/{id}")
 	public ResponseEntity<?> deacticeCMNDUser(@PathVariable String id, @RequestBody Info info) {
 		return personService.deacticeCMNDUser(id, info);
 	}
 	
 //6. Viết query xoá 1 info của 1 person	
-	@DeleteMapping("/info/delete/{id}")
+	@DeleteMapping("/info/deleteById/{id}")
 	public ResponseEntity<?> deleteInfo(@PathVariable String id, @RequestBody Info info) {
 		return personService.deleteInfo(id, info);
 	}
 	
 //8. Viết query cập nhật giới tính của toàn bộ document trong collection person sang NA (Chưa xác định)
-	@GetMapping("/update/sex")
+	@GetMapping("/update/updateSexToNA")
 	public ResponseEntity<?> updateAllSexToNA() {
 		return personService.updateAllSexToNA();
 	}
 	
 //9. Viết query đếm trong collection person có bao  nhiêu sdt
-	@GetMapping("/getAllPhones")
+	@GetMapping("/getTotalAllPhones")
 	public ResponseEntity<?> countTotalPhones() {
 		return personService.countTotalPhones();
 	}
@@ -128,4 +133,14 @@ public class PersonController {
 		return personService.getPersonByName(firstName);
 	}
 
+//** Làm thêm
+	@PostMapping("/languageInfo/{id}")
+	public ResponseEntity<?> addNewLanguageAndDeleteInfo(@PathVariable String id, @RequestBody Language language, @RequestBody Info info) {
+		if(ObjectId.isValid(id)) {
+			return personService.addNewLanguageAndDeleteInfo(id, language, info);			
+		} else {
+			return ResponseEntity.status(HttpStatus.PAYMENT_REQUIRED).body("Id is not Object Id");
+		}
+	}
+	
 }

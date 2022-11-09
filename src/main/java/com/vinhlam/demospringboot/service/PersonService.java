@@ -27,5 +27,10 @@ public interface PersonService {
 	ResponseEntity<?> countTotalPhones();
 	ResponseEntity<?> getAllLanguageDistinct();
 	ResponseEntity<?> getPersonByName(String firstName);
+	
 	List<Person> searchPersonByName(String name);
+//	Làm thêm
+	ResponseEntity<?> addNewLanguageAndDeleteInfo(String id, Language language, Info info);
+	
+//	Câu 14 
 }

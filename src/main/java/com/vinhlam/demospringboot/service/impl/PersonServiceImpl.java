@@ -1,6 +1,7 @@
 package com.vinhlam.demospringboot.service.impl;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import org.bson.BsonNull;
@@ -130,29 +131,50 @@ public class PersonServiceImpl implements PersonService {
 	}
 
 	// 2. Viết query update thêm 1 language của 1 person
+//	@Override
+//	public ResponseEntity<?> addNewLanguage(String id, Language language) {
+////		Check id and person exist
+//		ResponseEntity respon = getPersonById(id);
+//		if (respon.getStatusCodeValue() != 200) {
+//			return respon;
+//		}
+//		Bson filterQuery = Filters.eq("_id", new ObjectId(id));
+////		Check language đó có tồn tại hay chưa
+//		Bson languageQuery = Filters.eq("languages.language", language.getLanguage());
+////		Kiểm tra xem language đó có tồn tại hay không
+//		Bson deleteQuery = Filters.eq("languages.language", language.getLanguage());
+//		Document documentLanguage = personCollection.find(deleteQuery).first();
+//		if (documentLanguage == null) {
+//			return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Languague in person don't exist");
+//		}
+//		Bson query = Filters.and(filterQuery, deleteQuery);
+//		Bson updateQuery = Updates.addToSet("languages", language);
+//
+//		UpdateResult rs = personCollection.updateOne(query, updateQuery);
+//
+//		return rs.wasAcknowledged() ? ResponseEntity.ok(language)
+//				: ResponseEntity.status(HttpStatus.NOT_FOUND).body("Update new languages is not success");
+//	}
+	
+//	-----Câu 2 cách 2: Viết query update thêm 1 language của 1 person-------
 	@Override
 	public ResponseEntity<?> addNewLanguage(String id, Language language) {
-//		Check id and person exist
-		ResponseEntity respon = getPersonById(id);
-		if (respon.getStatusCodeValue() != 200) {
-			return respon;
-		}
 		Bson filterQuery = Filters.eq("_id", new ObjectId(id));
-//		Check language đó có tồn tại hay chưa
-		Bson languageQuery = Filters.eq("languages.language", language.getLanguage());
-//		Kiểm tra xem language đó có tồn tại hay không
-		Bson deleteQuery = Filters.eq("languages.language", language.getLanguage());
-		Document documentLanguage = personCollection.find(deleteQuery).first();
-		if (documentLanguage == null) {
-			return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Languague in person don't exist");
+		Bson updateLanguageQuery = Updates.addToSet("languages", language);
+		
+		UpdateOptions option = new UpdateOptions().upsert(true);
+		
+		UpdateResult ur = personCollection.updateOne(filterQuery, updateLanguageQuery, option);
+//		Check xem có person có tồn tại hay không
+		if(ur.getMatchedCount() == 0) {
+			return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Person don't exist");
 		}
-		Bson query = Filters.and(filterQuery, deleteQuery);
-		Bson updateQuery = Updates.addToSet("languages", language);
-
-		UpdateResult rs = personCollection.updateOne(query, updateQuery);
-
-		return rs.wasAcknowledged() ? ResponseEntity.ok(language)
-				: ResponseEntity.status(HttpStatus.NOT_FOUND).body("Update new languages is not success");
+//		Check xem có trường nào được update hay không
+		if (ur.getModifiedCount() > 0) {
+			return ResponseEntity.ok("Update language success");
+		} else { //Nếu có trường person tồn tại nhưng không có trường được update mà sử dụng addToSet tức là language đó đã tồn tại
+			return ResponseEntity.status(HttpStatus.NOT_FOUND).body("language is exist");
+		}
 	}
 
 	@Override
@@ -206,18 +228,10 @@ public class PersonServiceImpl implements PersonService {
 		}
 
 		Bson filterPerson = Filters.eq("_id", new ObjectId(id));
-
-//		Check info đó có tồn tại hay chưa
-		Bson filterInfo = Filters.eq("info.idNo", info.getIdNo());
-		Bson query = Filters.and(filterPerson, filterInfo);
-		Document documentInfo = personCollection.find(query).first();
-		if (documentInfo != null) {
-			return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Info is exist");
-		}
-
 		Bson updateBson = Updates.addToSet("info", info);
-
-		UpdateResult ur = personCollection.updateOne(filterPerson, updateBson);
+		UpdateOptions option = new UpdateOptions().upsert(true);
+		
+		UpdateResult ur = personCollection.updateOne(filterPerson, updateBson,option);
 
 		return ur.wasAcknowledged() ? ResponseEntity.ok("Add new " + info.getIdNo() + " success")
 				: ResponseEntity.status(HttpStatus.NOT_FOUND).body("Add new Info is not success");
@@ -242,9 +256,12 @@ public class PersonServiceImpl implements PersonService {
 			return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Info is not exist");
 		}
 
-		Bson updateQuery = Updates.set("info.status", info.getStatus());
-		UpdateResult ur = personCollection.updateMany(query, updateQuery);
-
+		Bson updateQuery = Updates.set("info.$[elem].status", info.getStatus());
+		UpdateOptions option = new UpdateOptions().arrayFilters(Arrays.asList(
+				new Document("elem.type", 1).append("elem.idNo", info.getIdNo())) 
+		);
+		UpdateResult ur = personCollection.updateMany(query, updateQuery, option);
+		
 		return ur.wasAcknowledged() ? ResponseEntity.ok("Update status info " + info.getIdNo() + " success")
 				: ResponseEntity.status(HttpStatus.NOT_FOUND).body("Update status info is not success");
 	}
@@ -336,6 +353,24 @@ public class PersonServiceImpl implements PersonService {
 			return ResponseEntity.ok(documents);
 		}else {
 			return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Not person");
+		}
+	}
+
+	@Override
+	public ResponseEntity<?> addNewLanguageAndDeleteInfo(String id, Language language, Info info) {
+		Bson filterQuery = Filters.eq("_id", new ObjectId(id));
+		Bson updateLanguageQuery = Updates.addToSet("languages", language);
+		Bson deleteInfoQuery = Updates.pull("info", info);
+		UpdateOptions option = new UpdateOptions().upsert(true);
+		
+		UpdateResult ur = personCollection.updateOne(filterQuery, updateLanguageQuery, option);
+		if(ur.getMatchedCount() == 0) {
+			return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Person don't exist");
+		}
+		if (ur.getModifiedCount() > 0) {
+			return ResponseEntity.ok("Update language success");
+		} else {
+			return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Language is exist");
 		}
 	}
 	
