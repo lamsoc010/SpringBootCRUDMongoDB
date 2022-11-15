@@ -2,7 +2,9 @@ package com.vinhlam.demospringboot.service.impl;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.bson.BsonNull;
 import org.bson.Document;
@@ -37,7 +39,6 @@ import com.mongodb.client.result.UpdateResult;
 import com.mongodb.internal.bulk.UpdateRequest;
 import com.vinhlam.demospringboot.DTO.PersonDTO;
 import com.vinhlam.demospringboot.entity.Person;
-import com.vinhlam.demospringboot.entity.Result;
 import com.vinhlam.demospringboot.entity.personObject.Info;
 import com.vinhlam.demospringboot.entity.personObject.Language;
 import com.vinhlam.demospringboot.repository.PersonRepository;
@@ -56,77 +57,84 @@ public class PersonServiceImpl implements PersonService {
 	@Autowired
 	private MongoDatabase mongoDatabase;
 
-	private MongoCollection<Document> personCollection;
+	private MongoCollection<Person> personCollection;
 
 	@Autowired
 	public void PersonServiceImpl() {
-		personCollection = mongoDatabase.getCollection("person");
+		personCollection = mongoDatabase.getCollection("person").withDocumentClass(Person.class);
 	}
 
 	@Override
-	public ResponseEntity<?> getAll(int pageNo, int pageSize) {
-		List<Document> documents = new ArrayList<Document>();
-		personCollection.find().skip((pageNo - 1) * pageSize).limit(pageSize).iterator()
-				.forEachRemaining(documents::add);
-
-		return ResponseEntity.ok(documents);
+	public List<PersonDTO> getAll(int pageNo, int pageSize) {
+		List<PersonDTO> personDTOs = new ArrayList<PersonDTO>();
+		
+		List<Bson> pipeline = new ArrayList<>();
+		Bson skip = Aggregates.skip((pageNo - 1) * pageSize);
+		Bson limit = Aggregates.limit(pageSize);
+		pipeline.add(skip);
+		pipeline.add(limit);
+		personCollection.aggregate(pipeline, PersonDTO.class).into(personDTOs);
+		
+		return personDTOs;
 	}
+	
 
 	@Override
-	public ResponseEntity<?> getPersonById(String id) {
-//		Kiểm tra id có phải là ObjectId hay không
-		if (!ObjectId.isValid(id)) {
-			return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Id is not ObjectId");
-		}
+	public PersonDTO getPersonById(String id) {
 
-//		Kiểm tra person có tồn tại hay không
 		Bson filter = Filters.eq("_id", new ObjectId(id));
-		Document document = personCollection.find(filter).first();
-		if (document == null) {
-			return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Person is not exist");
+		Person person = personCollection.find(filter).first();
+		if(person == null) {
+			return null;
 		}
-
-		PersonDTO personDTO = modelMapper.map(document, PersonDTO.class);
-		return ResponseEntity.ok(personDTO);
+		PersonDTO personDTO = modelMapper.map(person, PersonDTO.class);
+		
+		return personDTO;
 	}
 
 	@Override
-	public ResponseEntity<?> deletePerson(String id) {
-//		Check id and person exist
-		ResponseEntity respon = getPersonById(id);
-		if (respon.getStatusCodeValue() != 200) {
-			return respon;
-		}
+	public int deletePersonById(String id) {
 
 		Bson filter = Filters.eq("_id", new ObjectId(id));
 		DeleteResult rs = personCollection.deleteOne(filter);
 
-		return rs.wasAcknowledged() ? ResponseEntity.ok("Delete person id: " + id + " success")
-				: ResponseEntity.status(HttpStatus.NOT_FOUND).body("Delete not success");
+		if(rs.getDeletedCount() == 0) {
+			return 0; //No success
+		} else if(rs.getDeletedCount() >= 1) {
+			return 1; //Success
+		}
+		
+		return 2; //Error
+	} 
+
+	@Override
+	public int updatePersonById(String id, PersonDTO personDTO) {
+		
+		PersonDTO personDTOCheck = getPersonById(id);
+		if(personDTOCheck == null) {
+			return 0;
+		}
+		
+		Person person = modelMapper.map(personDTO, Person.class);
+		Person personResult = mongoTemplate.save(person);
+
+		if(personResult != null) {
+			return 1;
+		} else {
+			return 2;
+		}
 	}
 
 	@Override
-	public ResponseEntity<?> updatePerson(String id, PersonDTO personDTO) {
-//		Check id and person exist
-		ResponseEntity respon = getPersonById(id);
-		if (respon.getStatusCodeValue() != 200) {
-			return respon;
-		}
-
+	public boolean insertPerson(PersonDTO personDTO) {
+		
 		Person person = modelMapper.map(personDTO, Person.class);
-		Person personCheck = mongoTemplate.save(person);
-
-		return personCheck != null ? ResponseEntity.ok("Update person success")
-				: ResponseEntity.status(HttpStatus.NOT_FOUND).body("Update person is not success");
-	}
-
-	@Override
-	public Person insertPerson(PersonDTO personDTO) {
-		if (personDTO == null) {
-			return null;
+		Person personResult = mongoTemplate.save(person);
+		if(personResult != null) {
+			return true;
+		} else {
+			return false;
 		}
-		Person person = modelMapper.map(personDTO, Person.class);
-		return mongoTemplate.save(person);
 
 	}
 
@@ -158,22 +166,21 @@ public class PersonServiceImpl implements PersonService {
 	
 //	-----Câu 2 cách 2: Viết query update thêm 1 language của 1 person-------
 	@Override
-	public ResponseEntity<?> addNewLanguage(String id, Language language) {
+	public int addNewLanguage(String id, Language language) {
 		Bson filterQuery = Filters.eq("_id", new ObjectId(id));
 		Bson updateLanguageQuery = Updates.addToSet("languages", language);
 		
-		UpdateOptions option = new UpdateOptions().upsert(true);
+		UpdateResult ur = personCollection.updateOne(filterQuery, updateLanguageQuery);
 		
-		UpdateResult ur = personCollection.updateOne(filterQuery, updateLanguageQuery, option);
 //		Check xem có person có tồn tại hay không
 		if(ur.getMatchedCount() == 0) {
-			return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Person don't exist");
+			return 0;
 		}
 //		Check xem có trường nào được update hay không
 		if (ur.getModifiedCount() > 0) {
-			return ResponseEntity.ok("Update language success");
-		} else { //Nếu có trường person tồn tại nhưng không có trường được update mà sử dụng addToSet tức là language đó đã tồn tại
-			return ResponseEntity.status(HttpStatus.NOT_FOUND).body("language is exist");
+			return 1;
+		} else { //Nếu có trường person tồn tại nhưng không có trường được update mà sử dụng  tức là language đó đã tồn tại
+			return 3;
 		}
 	}
 
@@ -194,119 +201,110 @@ public class PersonServiceImpl implements PersonService {
 
 //3. Viết query xoá 1 language của 1 person
 	@Override
-	public ResponseEntity<?> deleteLanguage(String id, Language language) {
-//		Check id and person exist
-		ResponseEntity respon = getPersonById(id);
-		if (respon.getStatusCodeValue() != 200) {
-			return respon;
+	public int deleteLanguage(String id, Language language) {
+		Bson filterQuery = Filters.eq("_id", new ObjectId(id));
+		Bson deleteLanguageQuery = Updates.pull("languages", language);
+		
+		UpdateResult ur = personCollection.updateOne(filterQuery, deleteLanguageQuery);
+		
+//		Check xem có person có tồn tại hay không
+		if(ur.getMatchedCount() == 0) {
+			return 0;
 		}
-
-		Bson findQuery = Filters.eq("_id", new ObjectId(id));
-//		Kiểm tra xem language đó có tồn tại hay không
-		Bson deleteQuery = Filters.eq("languages.language", language.getLanguage());
-		Document documentLanguage = personCollection.find(deleteQuery).first();
-		if (documentLanguage == null) {
-			return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Languague in person don't exist");
+//		Check xem có trường nào được update hay không
+		if (ur.getModifiedCount() > 0) {
+			return 1;
+		} else { //Không tồn tai
+			return 3;
 		}
-		Bson query = Filters.and(findQuery, deleteQuery);
-		Bson updateQuery = Updates.pull("languages", language);
-
-		UpdateResult rs = personCollection.updateOne(query, updateQuery);
-
-		return rs.wasAcknowledged() ? ResponseEntity.ok(language)
-				: ResponseEntity.status(HttpStatus.NOT_FOUND).body("Delete languages is not success");
 
 	}
 
 //4. Viết query update thêm 1 info của 1 person
 	@Override
-	public ResponseEntity<?> addNewInfo(String id, Info info) {
-//		Check id and person exist
-		ResponseEntity respon = getPersonById(id);
-		if (respon.getStatusCodeValue() != 200) {
-			return respon;
-		}
-
-		Bson filterPerson = Filters.eq("_id", new ObjectId(id));
-		Bson updateBson = Updates.addToSet("info", info);
-		UpdateOptions option = new UpdateOptions().upsert(true);
+	public int addNewInfo(String id, Info info) {
 		
-		UpdateResult ur = personCollection.updateOne(filterPerson, updateBson,option);
-
-		return ur.wasAcknowledged() ? ResponseEntity.ok("Add new " + info.getIdNo() + " success")
-				: ResponseEntity.status(HttpStatus.NOT_FOUND).body("Add new Info is not success");
+		Bson filterQuery = Filters.eq("_id", new ObjectId(id));
+		Bson updateInfosQuery = Updates.addToSet("infos", info);
+		
+		UpdateResult ur = personCollection.updateOne(filterQuery, updateInfosQuery);
+		
+//		Check xem có person có tồn tại hay không
+		if(ur.getMatchedCount() == 0) {
+			return 0;
+		}
+//		Check xem có trường nào được update hay không
+		if (ur.getModifiedCount() > 0) {
+			return 1;
+		} else { //Nếu có trường person tồn tại nhưng không có trường được update mà sử dụng  tức là info đó đã tồn tại
+			return 3;
+		}
 	}
 
 //5. Viết query update CMND của 1 user thành deactive (ko còn sử dụng nữa)
 	@Override
-	public ResponseEntity<?> deacticeCMNDUser(String id, Info info) {
-//		Check id and person exist
-		ResponseEntity respon = getPersonById(id);
-		if (respon.getStatusCodeValue() != 200) {
-			return respon;
-		}
+	public int deacticeCMNDUser(String id, Info info) {
 
 		Bson filterPerson = Filters.eq("_id", new ObjectId(id));
-
-//		Check info đó có tồn tại hay chưa
-		Bson filterInfo = Filters.eq("info.idNo", info.getIdNo());
+		Bson filterInfo = Filters.eq("infos.idNo", info.getIdNo());
 		Bson query = Filters.and(filterPerson, filterInfo);
-		Document documentInfo = personCollection.find(query).first();
-		if (documentInfo == null) {
-			return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Info is not exist");
-		}
-
-		Bson updateQuery = Updates.set("info.$[elem].status", info.getStatus());
+		
+		Bson updateQuery = Updates.set("infos.$[elem].status", info.getStatus());
 		UpdateOptions option = new UpdateOptions().arrayFilters(Arrays.asList(
-				new Document("elem.type", 1).append("elem.idNo", info.getIdNo())) 
-		);
+				new Document("elem.type", 1)
+				.append("elem.idNo", info.getIdNo())
+				.append("elem.status", 1)));
+		
 		UpdateResult ur = personCollection.updateMany(query, updateQuery, option);
 		
-		return ur.wasAcknowledged() ? ResponseEntity.ok("Update status info " + info.getIdNo() + " success")
-				: ResponseEntity.status(HttpStatus.NOT_FOUND).body("Update status info is not success");
+//		Check xem có person có tồn tại hay không
+		if(ur.getMatchedCount() == 0) {
+			return 0;
+		}
+//		Check xem có trường nào được update hay không
+		if (ur.getModifiedCount() > 0) {
+			return 1;
+		} else { 
+			return 2;
+		}
 	}
 
 //6. Viết query xoá 1 info của 1 person	
 	@Override
-	public ResponseEntity<?> deleteInfo(String id, Info info) {
-//		Check id and person exist
-		ResponseEntity respon = getPersonById(id);
-		if (respon.getStatusCodeValue() != 200) {
-			return respon;
-		}
-
+	public int deleteInfo(String id, Info info) {
 		Bson filterQuery = Filters.eq("_id", new ObjectId(id));
-//		Kiểm tra xem language đó có tồn tại hay không
-		Bson deleteQuery = Filters.eq("info.idNo", info.getIdNo());
-		Bson query = Filters.and(filterQuery, deleteQuery);
-		Document documentLanguage = personCollection.find(query).first();
-		if (documentLanguage == null) {
-			return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Info in person don't exist");
+		Bson deleteLanguageQuery = Updates.pull("infos", info);
+		
+		UpdateResult ur = personCollection.updateOne(filterQuery, deleteLanguageQuery);
+		
+//		Check xem có person có tồn tại hay không
+		if(ur.getMatchedCount() == 0) {
+			return 0;
 		}
-		Bson updateQuery = Updates.pull("info", info);
-
-		UpdateResult ur = personCollection.updateOne(filterQuery, updateQuery);
-
-		return ur.wasAcknowledged() ? ResponseEntity.ok("Delete info idNo " + info.getIdNo() + " success")
-				: ResponseEntity.status(HttpStatus.NOT_FOUND).body("Delete info is not success");
+//		Check xem có trường nào được update hay không
+		if (ur.getModifiedCount() > 0) {
+			return 1;
+		} else { //Không tồn lại
+			return 3;
+		}
 	}
 
 //8. Viết query cập nhật giới tính của toàn bộ document trong collection person sang NA (Chưa xác định)
 	@Override
-	public ResponseEntity<?> updateAllSexToNA() {
+	public boolean updateAllSexToNA() {
 //		Person nào giới tính khác chưa xác định thì mới update
 		Bson filter = Filters.ne("sex", 2);
 
 		Bson updateQuery = Updates.set("sex", 2);
 		UpdateOptions upateOption = new UpdateOptions().upsert(true);
 		UpdateResult ur = personCollection.updateMany(filter, updateQuery, upateOption);
-		return ur.wasAcknowledged() ? ResponseEntity.ok("Update sex all person is success")
-				: ResponseEntity.status(HttpStatus.NOT_FOUND).body("Update sex all person is not success");
+		return ur.wasAcknowledged();
+		
 	}
 
 //9. Viết query đếm trong collection person có bao  nhiêu sdt
 	@Override
-	public ResponseEntity<?> countTotalPhones() {
+	public Document countTotalPhones() {
 		List<Bson> pipeline = new ArrayList<Bson>();
 		Bson filterNull = new Document("$match", new Document("phones.phone", new Document("$ne", new BsonNull() )));
 		
@@ -319,41 +317,40 @@ public class PersonServiceImpl implements PersonService {
 		pipeline.add(group);
 
 		Document document = personCollection.aggregate(pipeline, Document.class).first();
-		if(document == null) {
-			ResponseEntity.status(HttpStatus.NOT_FOUND).body("Error");
-		}
-		return ResponseEntity.ok(document);
+		return document;
+		
 	}
 
 //10. Viết query get toàn bộ language hiện có trong collection person (kết quả ko được trùng nhau)
 	@Override
-	public ResponseEntity<?> getAllLanguageDistinct() {
+	public List<String> getAllLanguageDistinct() {
 		List<String> languages = new ArrayList<String>();
 		languages = mongoTemplate.findDistinct("languages.language", Person.class, String.class);
-		if (languages.size() > 0) {
-			return ResponseEntity.ok(languages);
-		} else {
-			return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Get All Languages Distinct is not success");
-		}
+		
+		return languages;
 	}
 	
+//	Sửa cách mới nhưng chưa được, cứ để đó đã, xem lại câu match, mongo thì chạy được mà convert qua java chưa chạy được
 // 11. Viết query get những person có tên chứa "Nguyễn" và ngày sinh trong khoảng tháng 2~ tháng 10
 	@Override
-	public ResponseEntity<?> getPersonByName(String firstName) {
+	public List<PersonDTO> getPersonByName(String name, int startMonth, int endMonth) {
 		List<Bson> pipeline = new ArrayList<>();
-		Bson set = new Document("$set", new Document("month", new Document("$month", "$birthday")));
-		Bson match = new Document("$match", new Document("firstName", new Document("$regex", firstName).append("$options", "i"))
-				.append("month", new Document("$gte", 2).append("$lte", 10) ) );
+//		Bson match = new Document("$match", new Document("$or", Arrays.asList(new Document("firstName", new Document("$regex", name).append("$options", "i")
+//				.append("lastName", new Document("$regex", name).append("$options", "i"))))) //append of or
+//				.append("$expr", new Document("$and", Arrays.asList(new Document("$gte", Arrays.asList(new Document("$month", "$birthday"),startMonth))))
+//						.append("$lte", Arrays.asList(new Document("$month", "$birthday"),endMonth))));
 		
-		pipeline.add(set);
+		Bson match = new Document("$match", new Document("$or", 
+				Arrays.asList(new Document("firstName", new Document("$regex", name).append("$options", "i") )
+							.append("lastName", new Document("$regex", name).append("$options", "i")))
+				).append("$expr", new Document("$and", Arrays.asList(new Document("$gte", Arrays.asList(new Document("$month", "$birthday"), startMonth) )
+																	.append("$lte", Arrays.asList(new Document("$month", "$birthday"), endMonth) )  ) ) )  
+				);
 		pipeline.add(match);
-		List<Document> documents = new ArrayList<Document>();
-		personCollection.aggregate(pipeline).into(documents);
-		if(documents.size() > 0) {
-			return ResponseEntity.ok(documents);
-		}else {
-			return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Not person");
-		}
+		List<PersonDTO> personDTOs = new ArrayList<PersonDTO>();
+		personCollection.aggregate(pipeline, PersonDTO.class).into(personDTOs);
+		
+		return personDTOs;
 	}
 
 	@Override
@@ -373,6 +370,36 @@ public class PersonServiceImpl implements PersonService {
 			return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Language is exist");
 		}
 	}
+
+	
+//	14. //Viết query update thông tin của 1 person, gồm:
+//		sex
+//		info: thêm mới 1 info
+//		langs: xoá 1 lang
+//		phones: xoá 1 phone 
+	@Override
+	public int updateMutilFieldPerson(String id, Person person) {
+//		Map<Integer, String> map = new HashMap<Integer,String>();
+		Bson filterQuery = Filters.eq("_id", new ObjectId(id));
+		
+		Bson setUpdate = Updates.set("sex", person.getSex());
+		Bson pullUpdate = Updates.pull("languages", new Document("language", person.getLanguages().get(0).getLanguage())
+				.append("phones", new Document("phone", person.getPhones().get(0).getPhone())));
+		Bson addToSetUpdate = Updates.addToSet("infos", person.getInfos().get(0));
+		
+		Bson updateDocument = Updates.combine(setUpdate, pullUpdate, addToSetUpdate);
+
+		UpdateResult ur = personCollection.updateOne(filterQuery, updateDocument);
+		if(ur.getMatchedCount() == 0) {
+			return 0; //Failed
+		}
+		if (ur.getModifiedCount() > 0) {
+			return 1; //Success
+		} else {
+			return 2; //Failed
+		}
+	}
+
 	
 	
 

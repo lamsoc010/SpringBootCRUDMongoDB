@@ -29,6 +29,9 @@ import com.vinhlam.demospringboot.entity.Person;
 
 @SpringBootApplication
 public class CrudspringbootApplication {
+	
+	@Value("${spring.data.mongodb.database}")
+	private String mongoDB;
 
 	public static void main(String[] args) {
 		SpringApplication.run(CrudspringbootApplication.class, args);
@@ -53,7 +56,7 @@ public class CrudspringbootApplication {
 	@Bean
 	public MongoDatabase mongoDatabase() {
 		CodecRegistry pojoCodecRegistry = org.bson.codecs.configuration.CodecRegistries.fromRegistries(MongoClientSettings.getDefaultCodecRegistry(), org.bson.codecs.configuration.CodecRegistries.fromProviders(PojoCodecProvider.builder().automatic(true).build()));
-		return MongoClients.create().getDatabase("Person").withCodecRegistry(pojoCodecRegistry);
+		return MongoClients.create().getDatabase(mongoDB).withCodecRegistry(pojoCodecRegistry);
 	}
 	
 }

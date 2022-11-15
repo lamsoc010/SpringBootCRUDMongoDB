@@ -23,7 +23,7 @@ public class Person {
 	private String lastName;
 	private Date birthday;
 	private int age;
-	private int sex;
+	private Integer sex;
 	private List<Info> infos;
 	private List<Email> emails;
 	private List<Phone> phones;
